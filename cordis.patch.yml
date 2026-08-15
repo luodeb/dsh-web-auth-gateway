@@ -1,0 +1,3 @@
+- insert:
+    - id: web-auth-gateway
+      name: 'dsh-web-auth-gateway'
