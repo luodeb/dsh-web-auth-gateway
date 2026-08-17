@@ -223,10 +223,33 @@ export function apply(ctx: Context, config: Config = {}): void {
 }
 
 function proxyHttp(req: IncomingMessage, res: ServerResponse, host: string, port: number): void {
-  const headers = { ...req.headers, host: `${host}:${String(port)}` }
+  const isHtml = (headers: IncomingMessage['headers']): boolean => {
+    if (!headers) return false
+    const ct = String(headers['content-type'] ?? '')
+    const ce = String(headers['content-encoding'] ?? '')
+    return ct.includes('text/html') && (ce === '' || ce === 'identity')
+  }
+  const RANDOM_UUID_POLYFILL = "<script>if(typeof crypto!==\"undefined\"&&!crypto.randomUUID&&crypto.getRandomValues)crypto.randomUUID=function(){var b=new Uint8Array(16);crypto.getRandomValues(b);b[6]=b[6]&15|64;b[8]=b[8]&63|128;var h=\"\";for(var i=0;i<16;i++){if(i===4||i===6||i===8||i===10)h+=\"-\";h+=(\"0\"+b[i].toString(16)).slice(-2)}return h};</script>"
+  const headers = { ...req.headers, host: host + ':' + String(port) }
   const proxy = upstreamRequest({ host, port, method: req.method, path: req.url, headers }, upstream => {
-    res.writeHead(upstream.statusCode ?? 502, upstream.headers)
-    upstream.pipe(res)
+    const outHeaders = { ...upstream.headers }
+    if (isHtml(upstream.headers)) {
+      const chunks = []
+      upstream.on('data', c => chunks.push(c))
+      upstream.on('end', () => {
+        let body = Buffer.concat(chunks).toString('utf8')
+        const idx = body.toLowerCase().lastIndexOf('</head>')
+        if (idx !== -1) {
+          body = body.slice(0, idx) + RANDOM_UUID_POLYFILL + body.slice(idx)
+          delete outHeaders['content-length']
+        }
+        res.writeHead(upstream.statusCode ?? 502, outHeaders)
+        res.end(Buffer.from(body, 'utf8'))
+      })
+    } else {
+      res.writeHead(upstream.statusCode ?? 502, outHeaders)
+      upstream.pipe(res)
+    }
   })
   proxy.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end('Bad Gateway') })
   req.pipe(proxy)
