@@ -12,9 +12,10 @@ import z from 'schemastery'
 export const name = 'web-auth-gateway'
 export const inject = ['webServer']
 export const WEB_AUTH_GATEWAY_SETTINGS_NAMESPACE = settingsNamespace('web-auth-gateway')
-export interface Config { enabled?: boolean; port?: number; sessionTtlHours?: number }
+export interface Config { enabled?: boolean; host?: string; port?: number; sessionTtlHours?: number }
 export const Config: z<Config> = z.object({
   enabled: z.boolean().default(true),
+  host: z.string().default('0.0.0.0'),
   port: z.number().step(1).min(1).max(65535).default(3090),
   sessionTtlHours: z.number().step(1).min(1).max(720).default(12),
 })
@@ -169,7 +170,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       upstream.on('error', () => socket.destroy())
     })
     server.on('error', error => ctx.logger('web-auth-gateway').error(error))
-    server.listen(port, '127.0.0.1', () => ctx.logger('web-auth-gateway').info(`login gateway: http://127.0.0.1:${String(port)}`))
+    server.listen(port, value.host ?? '0.0.0.0', () => ctx.logger('web-auth-gateway').info(`login gateway: http://${value.host ?? '0.0.0.0'}:${String(port)}`))
     dispose = () => server.close()
   }
   const configRoute: WebRoute = {
