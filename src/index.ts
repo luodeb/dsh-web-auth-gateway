@@ -236,8 +236,8 @@ function proxyHttp(req: IncomingMessage, res: ServerResponse, host: string, port
   const proxy = upstreamRequest({ host, port, method: req.method, path: req.url, headers }, upstream => {
     const outHeaders = { ...upstream.headers }
     if (isHtml(upstream.headers)) {
-      const chunks = []
-      upstream.on('data', c => chunks.push(c))
+      const chunks: Buffer[] = []
+      upstream.on('data', (c: Buffer) => chunks.push(c))
       upstream.on('end', () => {
         let body = Buffer.concat(chunks).toString('utf8')
         const idx = body.toLowerCase().lastIndexOf('</head>')
