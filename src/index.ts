@@ -3,7 +3,7 @@ import { createServer, request as upstreamRequest, type IncomingMessage, type Se
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { connect } from 'node:net'
+import { connect, type Socket } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
 import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
@@ -157,15 +157,17 @@ export function apply(ctx: Context, config: Config = {}): void {
     })
     server.on('upgrade', (req, socket, head) => {
       if (!valid(req)) { socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return }
-      const upstream = connect(ctx.webServer.port, ctx.webServer.host, () => {
+      let upstream: Socket | undefined
+      socket.on('error', () => { upstream?.destroy(); socket.destroy() })
+      upstream = connect(ctx.webServer.port, ctx.webServer.host, () => {
         const headers = { ...req.headers, host: `${ctx.webServer.host}:${String(ctx.webServer.port)}` }
         let raw = `${req.method ?? 'GET'} ${req.url ?? '/'} HTTP/${req.httpVersion}\r\n`
         for (const [key, item] of Object.entries(headers)) {
           if (item !== undefined) raw += `${key}: ${Array.isArray(item) ? item.join(', ') : item}\r\n`
         }
-        upstream.write(`${raw}\r\n`)
-        if (head.length > 0) upstream.write(head)
-        socket.pipe(upstream).pipe(socket)
+        upstream!.write(`${raw}\r\n`)
+        if (head.length > 0) upstream!.write(head)
+        socket.pipe(upstream!).pipe(socket)
       })
       upstream.on('error', () => socket.destroy())
     })
@@ -249,6 +251,7 @@ function proxyHttp(req: IncomingMessage, res: ServerResponse, host: string, port
     } else {
       res.writeHead(upstream.statusCode ?? 502, outHeaders)
       upstream.pipe(res)
+      upstream.on('error', () => res.destroy())
     }
   })
   proxy.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end('Bad Gateway') })
